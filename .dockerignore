@@ -1,0 +1,13 @@
+# Arquivos do Git
+.git
+.gitignore
+
+# Variáveis de ambiente locais
+.env
+*.env
+
+# Pasta de binários do Air
+tmp
+
+# Dependências (se você usar 'go mod vendor')
+vendor

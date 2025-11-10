@@ -9,6 +9,7 @@ import (
 type Config struct {
 	APIPort     string
 	DatabaseURL string
+	JWTSecret   string
 }
 
 // LoadConfig lê a configuração das variáveis de ambiente
@@ -23,9 +24,15 @@ func LoadConfig() (Config, error) {
 		apiPort = "8080"
 	}
 
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		return Config{}, errors.New("JWT_SECRET não está definida")
+	}
+
 	config := Config{
 		APIPort:     apiPort,
 		DatabaseURL: dbURL,
+		JWTSecret:   jwtSecret,
 	}
 
 	return config, nil

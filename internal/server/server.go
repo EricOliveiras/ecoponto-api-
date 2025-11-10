@@ -12,10 +12,11 @@ import (
 type Server struct {
 	router      *gin.Engine
 	ecopontoHdl *ecoponto.Handler
+	jwtSecret   string
 }
 
 // NewServer cria e configura o servidor com todas as rotas
-func NewServer(ecopontoHdl *ecoponto.Handler) *Server {
+func NewServer(ecopontoHdl *ecoponto.Handler, jwtSecret string) *Server {
 	// Cria o router Gin
 	r := gin.Default()
 
@@ -23,6 +24,7 @@ func NewServer(ecopontoHdl *ecoponto.Handler) *Server {
 	s := &Server{
 		router:      r,
 		ecopontoHdl: ecopontoHdl,
+		jwtSecret:   jwtSecret,
 	}
 
 	// Registra todas as nossas rotas
@@ -33,7 +35,8 @@ func NewServer(ecopontoHdl *ecoponto.Handler) *Server {
 
 // registerRoutes é um método privado para organizar o registro
 func (s *Server) registerRoutes() {
-	// Rota de health-check
+	// --- Rotas Públicas  ---
+	// Health Check
 	s.router.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message":   "pong",
@@ -41,12 +44,19 @@ func (s *Server) registerRoutes() {
 		})
 	})
 
-	// Agrupa todas as rotas da API sob o prefixo /api
-	api := s.router.Group("/api")
+	apiPublic := s.router.Group("/api")
 	{
-		// Rotas de Ecoponto
-		api.POST("/ecopontos", s.ecopontoHdl.CreateEcoponto)
-		api.GET("/ecopontos", s.ecopontoHdl.ListEcopontos)
+		apiPublic.GET("/ecopontos", s.ecopontoHdl.ListEcopontos)
+		apiPublic.GET("/ecopontos/:id", s.ecopontoHdl.GetEcoponto)
+	}
+
+	// --- Rotas de Admin (protegidas com JWT) ---
+	apiAdmin := s.router.Group("/api")
+
+	// Aplica o middleware de autenticação a este grupo
+	apiAdmin.Use(AuthMiddleware(s.jwtSecret))
+	{
+		apiAdmin.POST("/ecopontos", s.ecopontoHdl.CreateEcoponto)
 	}
 }
 

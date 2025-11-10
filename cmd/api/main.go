@@ -10,27 +10,24 @@ import (
 )
 
 func main() {
-	// 1. Carrega as configurações 
+	// 1. Carrega as configurações
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Erro ao carregar configuração: %v", err)
 	}
 
-	// 2. Conecta ao banco de dados 
+	// 2. Conecta ao banco
 	db := database.Connect(cfg.DatabaseURL)
 	defer db.Close()
 
-	// 3. Injeção de Dependência (a "amarração")
-	// Criamos as instâncias que nosso servidor precisa
+	// 3. Injeção de Dependência
 	ecopontoRepo := ecoponto.NewRepository(db)
 	ecopontoHandler := ecoponto.NewHandler(ecopontoRepo)
 
 	// 4. Configura o Servidor
-	// Passamos o handler para o novo servidor
-	srv := server.NewServer(ecopontoHandler)
+	srv := server.NewServer(ecopontoHandler, cfg.JWTSecret)
 
 	// 5. Sobe o servidor
-	// Chamamos o método Run do nosso novo servidor
 	if err := srv.Run(cfg.APIPort); err != nil {
 		log.Fatalf("Erro ao iniciar o servidor: %v", err)
 	}

@@ -1,0 +1,46 @@
+services:
+  # 1. O Serviço da nossa API em Go
+  api:
+    container_name: ecoponto_api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      # Lê a porta do .env
+      - "${API_PORT}:${API_PORT}"
+    # A seção 'volumes' foi removida daqui para usar
+    # o binário compilado dentro da imagem.
+    environment:
+      # Passa a porta para dentro do container
+      API_PORT: ${API_PORT}
+
+      # A URL de conexão que o app Go (rodando no container) usará
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 2. O Serviço do Banco de Dados (Postgres + PostGIS)
+  db:
+    container_name: ecoponto_db
+    image: postgis/postgis:16-3.4
+    environment:
+      # Lê as credenciais do .env
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Lê a porta do .env (ex: 5432:5432)
+      - "${DB_PORT}:5432"
+    volumes:
+      # Cria um volume nomeado para persistir os dados do banco
+      - ecoponto-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# Define o volume nomeado que usamos no serviço 'db'
+volumes:
+  ecoponto-data:

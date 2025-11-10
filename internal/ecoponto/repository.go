@@ -84,3 +84,27 @@ func (r *Repository) ListByProximity(ctx context.Context, params ListByProximity
 
 	return pontos, nil
 }
+
+// GetByID busca um único ecoponto pelo seu ID (UUID)
+func (r *Repository) GetByID(ctx context.Context, id string) (*EcoPonto, error) {
+	query := `
+		SELECT 
+			id, nome, tipo_residuo, logradouro, bairro, created_at,
+			ST_X(coordenadas::geometry) AS longitude,
+			ST_Y(coordenadas::geometry) AS latitude
+		FROM 
+			ecopontos
+		WHERE 
+			id = $1
+	`
+
+	var ponto EcoPonto
+
+	err := r.db.GetContext(ctx, &ponto, query, id)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &ponto, nil
+}

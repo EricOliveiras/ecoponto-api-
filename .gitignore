@@ -1,0 +1,27 @@
+# Binários e executáveis
+# Pasta temporária do Air
+tmp/
+# Binário principal (se compilado localmente)
+ecoponto-api
+*.exe
+*.out
+
+# Variáveis de ambiente
+# NUNCA envie seus segredos para o Git
+.env
+*.env
+.env.*
+
+# Dependências do Go
+# É melhor baixar com 'go mod download' do que versionar
+vendor/
+
+# Arquivos de sistema operacional
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Pastas de configuração de IDE
+.idea/
+.vscode/

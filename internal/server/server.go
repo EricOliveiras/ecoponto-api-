@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/ericoliveiras/ecoponto-api/internal/auth"
 	"github.com/ericoliveiras/ecoponto-api/internal/ecoponto"
 	"github.com/gin-gonic/gin"
 )
@@ -12,11 +13,12 @@ import (
 type Server struct {
 	router      *gin.Engine
 	ecopontoHdl *ecoponto.Handler
+	authHdl     *auth.Handler
 	jwtSecret   string
 }
 
 // NewServer cria e configura o servidor com todas as rotas
-func NewServer(ecopontoHdl *ecoponto.Handler, jwtSecret string) *Server {
+func NewServer(ecopontoHdl *ecoponto.Handler, authHdl *auth.Handler, jwtSecret string) *Server {
 	// Cria o router Gin
 	r := gin.Default()
 
@@ -24,6 +26,7 @@ func NewServer(ecopontoHdl *ecoponto.Handler, jwtSecret string) *Server {
 	s := &Server{
 		router:      r,
 		ecopontoHdl: ecopontoHdl,
+		authHdl:     authHdl,
 		jwtSecret:   jwtSecret,
 	}
 
@@ -48,6 +51,7 @@ func (s *Server) registerRoutes() {
 	{
 		apiPublic.GET("/ecopontos", s.ecopontoHdl.ListEcopontos)
 		apiPublic.GET("/ecopontos/:id", s.ecopontoHdl.GetEcoponto)
+		apiPublic.POST("/auth/login", s.authHdl.Login)
 	}
 
 	// --- Rotas de Admin (protegidas com JWT) ---

@@ -3,10 +3,12 @@ package main
 import (
 	"log"
 
+	"github.com/ericoliveiras/ecoponto-api/internal/auth"
 	"github.com/ericoliveiras/ecoponto-api/internal/config"
 	"github.com/ericoliveiras/ecoponto-api/internal/database"
 	"github.com/ericoliveiras/ecoponto-api/internal/ecoponto"
 	"github.com/ericoliveiras/ecoponto-api/internal/server"
+	"github.com/ericoliveiras/ecoponto-api/internal/user"
 )
 
 func main() {
@@ -20,12 +22,16 @@ func main() {
 	db := database.Connect(cfg.DatabaseURL)
 	defer db.Close()
 
-	// 3. Injeção de Dependência
+	// 3. Cria os repositórios
 	ecopontoRepo := ecoponto.NewRepository(db)
-	ecopontoHandler := ecoponto.NewHandler(ecopontoRepo)
+	userRepo := user.NewRepository(db) //
 
-	// 4. Configura o Servidor
-	srv := server.NewServer(ecopontoHandler, cfg.JWTSecret)
+	// Agora criamos os handlers, injetando os repositórios
+	ecopontoHandler := ecoponto.NewHandler(ecopontoRepo)
+	authHandler := auth.NewHandler(userRepo, cfg.JWTSecret)
+
+	// Passamos o novo authHandler para o servidor
+	srv := server.NewServer(ecopontoHandler, authHandler, cfg.JWTSecret)
 
 	// 5. Sobe o servidor
 	if err := srv.Run(cfg.APIPort); err != nil {

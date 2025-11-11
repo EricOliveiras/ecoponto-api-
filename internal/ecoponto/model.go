@@ -29,3 +29,12 @@ type ListByProximityParams struct {
 	Distancia   int
 	TipoResiduo string
 }
+
+type UpdateEcoPontoRequest struct {
+	Nome        *string  `json:"nome"`
+	TipoResiduo *string  `json:"tipo_residuo"`
+	Logradouro  *string  `json:"logradouro"`
+	Bairro      *string  `json:"bairro"`
+	Latitude    *float64 `json:"latitude"`
+	Longitude   *float64 `json:"longitude"`
+}

@@ -107,3 +107,65 @@ func (h *Handler) GetEcoponto(c *gin.Context) {
 	// 4. Retornar o ponto encontrado
 	c.JSON(http.StatusOK, ponto)
 }
+
+// UpdateEcoponto é o método para o endpoint PUT /api/ecopontos/:id
+func (h *Handler) UpdateEcoponto(c *gin.Context) {
+	// 1. Ler o ID do parâmetro da URL
+	id := c.Param("id")
+
+	// 2. Define uma variável para o JSON de entrada (UpdateEcoPontoRequest)
+	var req UpdateEcoPontoRequest
+
+	// 3. Faz o "bind" do JSON do body para a struct 'req'
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 4. Chama o repositório para atualizar o ecoponto
+	pontoAtualizado, err := h.repo.Update(c.Request.Context(), id, req)
+	if err != nil {
+		// 5. Checar os tipos de erro
+		if err == sql.ErrNoRows {
+			// Se o ID não foi encontrado
+			c.JSON(http.StatusNotFound, gin.H{"error": "Ecoponto não encontrado"})
+			return
+		}
+		if err == sql.ErrTxDone {
+			// Erro que definimos para lat/lon incompletos
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Latitude e Longitude devem ser enviadas juntas"})
+			return
+		}
+
+		// Outro erro de banco
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 6. Retorna o objeto atualizado
+	c.JSON(http.StatusOK, pontoAtualizado)
+}
+
+// DeleteEcoponto é o método para o endpoint DELETE /api/ecopontos/:id
+func (h *Handler) DeleteEcoponto(c *gin.Context) {
+	// 1. Ler o ID do parâmetro da URL
+	id := c.Param("id")
+
+	// 2. Chamar o repositório para apagar
+	err := h.repo.Delete(c.Request.Context(), id)
+
+	if err != nil {
+		// 3. Checar se o ID não existia
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Ecoponto não encontrado"})
+			return
+		}
+
+		// Outro erro de banco
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 4. Retornar 204 No Content (sucesso, sem corpo de resposta)
+	c.Status(http.StatusNoContent)
+}

@@ -19,12 +19,17 @@ func NewRepository(db *sqlx.DB) *Repository {
 }
 
 // Create insere um novo ecoponto no banco de dados
-func (r *Repository) Create(ctx context.Context, req CreateEcoPontoRequest) (*EcoPonto, error) {
+func (r *Repository) Create(ctx context.Context, req CreateEcoPontoRequest, lat, lon float64) (*EcoPonto, error) {
 	query := `
-		INSERT INTO ecopontos (nome, tipo_residuo, logradouro, bairro, coordenadas)
-		VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326))
-		RETURNING id, nome, tipo_residuo, logradouro, bairro, created_at
+		INSERT INTO ecopontos (
+			nome, tipo_residuo, logradouro, bairro, coordenadas, 
+			horario_funcionamento, foto_url
+		)
+		VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326), $7, $8)
+		RETURNING id, nome, tipo_residuo, logradouro, bairro, created_at, 
+				  horario_funcionamento, foto_url
 	`
+
 	var novoPonto EcoPonto
 	err := r.db.QueryRowxContext(
 		ctx,
@@ -33,23 +38,26 @@ func (r *Repository) Create(ctx context.Context, req CreateEcoPontoRequest) (*Ec
 		req.TipoResiduo,
 		req.Logradouro,
 		req.Bairro,
-		req.Longitude,
-		req.Latitude,
+		lon,
+		lat,
+		req.HorarioFuncionamento,
+		req.FotoURL,              
 	).StructScan(&novoPonto)
+
 	if err != nil {
 		return nil, err
 	}
-	novoPonto.Latitude = req.Latitude
-	novoPonto.Longitude = req.Longitude
+	novoPonto.Latitude = lat
+	novoPonto.Longitude = lon
 	return &novoPonto, nil
 }
 
-// ListByProximity busca ecopontos dentro de um raio (distância)
+// Adiciona os novos campos ao SELECT
 func (r *Repository) ListByProximity(ctx context.Context, params ListByProximityParams) ([]EcoPonto, error) {
-
 	query := `
 		SELECT 
 			id, nome, tipo_residuo, logradouro, bairro, created_at,
+			horario_funcionamento, foto_url, -- <--- ADICIONADO
 			ST_X(coordenadas::geometry) AS longitude,
 			ST_Y(coordenadas::geometry) AS latitude
 		FROM 
@@ -57,41 +65,28 @@ func (r *Repository) ListByProximity(ctx context.Context, params ListByProximity
 		WHERE 
 			ST_DWithin(
 				coordenadas,
-				-- AQUI ESTÁ A CORREÇÃO: 4236 -> 4326
 				ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
 				$3
 			)
 			AND ($4 = '' OR tipo_residuo = $4)
 	`
-
 	var pontos []EcoPonto
-
-	err := r.db.SelectContext(
-		ctx,
-		&pontos,
-		query,
-		params.Longitude,   // $1
-		params.Latitude,    // $2
-		params.Distancia,   // $3
-		params.TipoResiduo, // $4
-	)
-
+	err := r.db.SelectContext(ctx, &pontos, query, params.Longitude, params.Latitude, params.Distancia, params.TipoResiduo)
 	if err != nil {
 		return nil, err
 	}
-
 	if pontos == nil {
 		pontos = make([]EcoPonto, 0)
 	}
-
 	return pontos, nil
 }
 
-// GetByID busca um único ecoponto pelo seu ID (UUID)
+// Adiciona os novos campos ao SELECT
 func (r *Repository) GetByID(ctx context.Context, id string) (*EcoPonto, error) {
 	query := `
 		SELECT 
 			id, nome, tipo_residuo, logradouro, bairro, created_at,
+			horario_funcionamento, foto_url, -- <--- ADICIONADO
 			ST_X(coordenadas::geometry) AS longitude,
 			ST_Y(coordenadas::geometry) AS latitude
 		FROM 
@@ -99,27 +94,23 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*EcoPonto, error) 
 		WHERE 
 			id = $1
 	`
-
 	var ponto EcoPonto
-
 	err := r.db.GetContext(ctx, &ponto, query, id)
-
 	if err != nil {
 		return nil, err
 	}
-
 	return &ponto, nil
 }
 
+// Adiciona os novos campos ao builder do squirrel 
 func (r *Repository) Update(ctx context.Context, id string, req UpdateEcoPontoRequest) (*EcoPonto, error) {
-	// 1. Inicia o construtor de SQL (squirrel)
-	// Usamos PlaceholderFormat(sq.Dollar) para usar $1, $2...
+	// 1. Inicia o construtor de SQL
 	qb := sq.Update("ecopontos").
 		PlaceholderFormat(sq.Dollar).
 		Where(sq.Eq{"id": id}).
-		Suffix("RETURNING id, nome, tipo_residuo, logradouro, bairro, created_at, ST_X(coordenadas::geometry) AS longitude, ST_Y(coordenadas::geometry) AS latitude")
+		Suffix("RETURNING id, nome, tipo_residuo, logradouro, bairro, created_at, horario_funcionamento, foto_url, ST_X(coordenadas::geometry) AS longitude, ST_Y(coordenadas::geometry) AS latitude") 
 
-	// 2. Adiciona campos à query APENAS se eles não forem nil
+	// 2. Adiciona campos de texto
 	if req.Nome != nil {
 		qb = qb.Set("nome", *req.Nome)
 	}
@@ -133,12 +124,18 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateEcoPontoRe
 		qb = qb.Set("bairro", *req.Bairro)
 	}
 
-	// 3. Lógica especial para coordenadas (devem ser atualizadas juntas)
+	if req.HorarioFuncionamento != nil {
+		qb = qb.Set("horario_funcionamento", *req.HorarioFuncionamento)
+	}
+	if req.FotoURL != nil {
+		qb = qb.Set("foto_url", *req.FotoURL)
+	}
+
+	// 3. Lógica especial para coordenadas 
 	if req.Latitude != nil && req.Longitude != nil {
-		// Criamos uma expressão SQL customizada
-		qb = qb.Set("coordenadas", sq.Expr("ST_SetSRID(ST_MakePoint($?), $?)", *req.Longitude, *req.Latitude, 4326))
+		qb = qb.Set("coordenadas", sq.Expr("ST_SetSRID(ST_MakePoint(?, ?), 4326)", *req.Longitude, *req.Latitude))
 	} else if req.Latitude != nil || req.Longitude != nil {
-		// Se o admin só enviar Lat ou Lon, é um erro de lógica
+		// Se o admin só enviar Lat ou Lon, é um erro
 		return nil, sql.ErrTxDone
 	}
 
@@ -151,7 +148,6 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateEcoPontoRe
 	var pontoAtualizado EcoPonto
 	err = r.db.QueryRowxContext(ctx, query, args...).StructScan(&pontoAtualizado)
 	if err != nil {
-		// Pode ser sql.ErrNoRows se o ID não existir
 		return nil, err
 	}
 
@@ -176,8 +172,31 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 
 	// Se nenhuma linha foi afetada, significa que o ID não existia
 	if rows == 0 {
-		return sql.ErrNoRows 
+		return sql.ErrNoRows
 	}
 
 	return nil
+}
+
+func (r *Repository) ListAll(ctx context.Context) ([]EcoPonto, error) {
+	query := `
+		SELECT 
+			id, nome, tipo_residuo, logradouro, bairro, created_at,
+			horario_funcionamento, foto_url, -- <--- ADICIONADO
+			ST_X(coordenadas::geometry) AS longitude,
+			ST_Y(coordenadas::geometry) AS latitude
+		FROM 
+			ecopontos
+		ORDER BY
+			created_at DESC
+	`
+	var pontos []EcoPonto
+	err := r.db.SelectContext(ctx, &pontos, query)
+	if err != nil {
+		return nil, err
+	}
+	if pontos == nil {
+		pontos = make([]EcoPonto, 0)
+	}
+	return pontos, nil
 }

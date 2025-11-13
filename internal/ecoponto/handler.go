@@ -2,9 +2,12 @@ package ecoponto
 
 import (
 	"database/sql"
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
+	"github.com/ericoliveiras/ecoponto-api/internal/geocoding"
 	"github.com/gin-gonic/gin"
 )
 
@@ -20,16 +23,52 @@ func NewHandler(repo *Repository) *Handler {
 
 // CreateEcoponto é o método para o endpoint POST /api/ecopontos
 func (h *Handler) CreateEcoponto(c *gin.Context) {
+	// 1. Faz o "bind" do JSON (que agora pode ter lat/lon)
 	var req CreateEcoPontoRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	novoPonto, err := h.repo.Create(c.Request.Context(), req)
+
+	var lat, lon float64
+	var err error
+
+	// Verificamos se os ponteiros NÃO SÃO nulos
+	if req.Latitude != nil && req.Longitude != nil {
+
+		log.Println("Recebidas coordenadas manuais do frontend.")
+		lat = *req.Latitude
+		lon = *req.Longitude
+
+	} else {
+		// CENÁRIO 2: O frontend NÃO enviou. Usar Geocoding (como antes).
+		log.Println("Coordenadas não fornecidas. A acionar geocoding...")
+
+		// Monta a string de endereço
+		addressString := fmt.Sprintf("%s, %s, %s, %s",
+			req.Logradouro,
+			req.Bairro,
+			req.Cidade,
+			req.Estado,
+		)
+
+		// Chama o Geocoder
+		lat, lon, err = geocoding.GetCoordsFromAddress(addressString)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Endereço não encontrado ou inválido"})
+			return
+		}
+	}
+
+	// 3. Chama o repositório
+	novoPonto, err := h.repo.Create(c.Request.Context(), req, lat, lon)
 	if err != nil {
+		// Se der erro no banco
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// 4. Retorna o objeto criado
 	c.JSON(http.StatusCreated, novoPonto)
 }
 
@@ -122,27 +161,41 @@ func (h *Handler) UpdateEcoponto(c *gin.Context) {
 		return
 	}
 
-	// 4. Chama o repositório para atualizar o ecoponto
+	// 4. Lógica Condicional de Coordenadas
+	// Verificamos se o frontend enviou novas coordenadas (pin arrastado)
+	if req.Latitude != nil && req.Longitude != nil {
+
+		log.Println("UPDATE: Recebidas coordenadas manuais do frontend.")
+		// O repositório (com squirrel) saberá lidar com estes campos
+		// não precisamos de 'lat' e 'lon' separadas aqui.
+
+	} else if req.Logradouro != nil || req.Bairro != nil {
+		// CENÁRIO 2: O frontend NÃO enviou coords, mas enviou um NOVO endereço
+		// (Precisamos de fazer geocoding neste novo endereço)
+
+		log.Println("UPDATE: A acionar geocoding para novo endereço.")
+	}
+
+	// 5. Chama o repositório para atualizar o ecoponto
+	// O 'repo.Update' (com Squirrel) é inteligente e irá
+	// atualizar apenas os campos que não são nulos no 'req'.
 	pontoAtualizado, err := h.repo.Update(c.Request.Context(), id, req)
 	if err != nil {
-		// 5. Checar os tipos de erro
+		// 6. Checar os tipos de erro
 		if err == sql.ErrNoRows {
-			// Se o ID não foi encontrado
 			c.JSON(http.StatusNotFound, gin.H{"error": "Ecoponto não encontrado"})
 			return
 		}
 		if err == sql.ErrTxDone {
-			// Erro que definimos para lat/lon incompletos
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Latitude e Longitude devem ser enviadas juntas"})
 			return
 		}
 
-		// Outro erro de banco
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 6. Retorna o objeto atualizado
+	// 7. Retorna o objeto atualizado
 	c.JSON(http.StatusOK, pontoAtualizado)
 }
 
@@ -168,4 +221,18 @@ func (h *Handler) DeleteEcoponto(c *gin.Context) {
 
 	// 4. Retornar 204 No Content (sucesso, sem corpo de resposta)
 	c.Status(http.StatusNoContent)
+}
+
+// ListAllEcopontos é o método para o endpoint de admin GET /api/ecopontos/all
+func (h *Handler) ListAllEcopontos(c *gin.Context) {
+	// 1. Chama o repositório
+	pontos, err := h.repo.ListAll(c.Request.Context())
+	if err != nil {
+		// 2. Se der erro, retorna 500
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 3. Retorna a lista de pontos (mesmo que esteja vazia)
+	c.JSON(http.StatusOK, pontos)
 }

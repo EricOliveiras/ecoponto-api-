@@ -86,6 +86,7 @@ func (s *Server) registerRoutes() {
 		apiAdmin.POST("/ecopontos", s.ecopontoHdl.CreateEcoponto)
 		apiAdmin.PUT("/ecopontos/:id", s.ecopontoHdl.UpdateEcoponto)
 		apiAdmin.DELETE("/ecopontos/:id", s.ecopontoHdl.DeleteEcoponto)
+		apiAdmin.GET("/ecopontos/all", s.ecopontoHdl.ListAllEcopontos)
 	}
 }
 
